@@ -1,0 +1,47 @@
+type TradingBot = 
+ service {
+   cancelBet: (principal, MarketID, text) -> (nat);
+   getBotsOrders: (principal, MarketID) -> (vec ImmutableOrder);
+   placeBet: (principal, MarketID, PlaceOrder) -> (PlaceBetResult);
+ };
+type Time = int;
+type Premium = nat;
+type PlaceOrder = 
+ record {
+   contracts: nat;
+   odds: nat;
+   side: OrderSide;
+ };
+type PlaceBetResult = 
+ variant {
+   Err: text;
+   Ok: ImmutableOrder;
+ };
+type OrderStatus = 
+ variant {
+   cancelled;
+   filled;
+   open;
+ };
+type OrderSide = 
+ variant {
+   buy;
+   sell;
+ };
+type OrderID = text;
+type MarketID = nat;
+type ImmutableOrder = 
+ record {
+   createdAt: Time;
+   currentContracts: nat;
+   eventId: EventID;
+   id: OrderID;
+   initialContracts: nat;
+   marketId: MarketID;
+   premium: Premium;
+   side: OrderSide;
+   status: OrderStatus;
+   user: principal;
+ };
+type EventID = nat;
+service : (principal) -> TradingBot

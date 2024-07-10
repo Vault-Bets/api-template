@@ -1,0 +1,30 @@
+{
+  "canisters": {
+    "tradingBot": {
+      "main": "src/canister/main.mo",
+      "type": "motoko",
+      "declarations": {
+
+        "output": "src/server/ic/declarations/tradingBot"
+      }
+    }
+  },
+  "networks": {
+    "staging": {
+      "providers": ["https://icp0.io"],
+      "type": "persistent"
+    },
+    "development": {
+      "providers": ["https://icp0.io"],
+      "type": "persistent"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": "mops sources"
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}
