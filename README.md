@@ -6,14 +6,14 @@ The most important component in this template is the canister found at `src/cani
 
 The second component in this template repo is the example_usage / example_server this is simply a typescript module that demonstrates how a MM could interact with the canister via an on/off-chain server and more importantly how the MM can call to the "Game Controller" to get details regarding games that are currently live on Vault Bet.
 
-NB: This is by no means the only way someone can integrate with Vault Bets API it is simply a template based off of trading bots that have been build previously and coming up with new innovative ways of integrating with Vault Bets API is encouraged.
+NB: This is by no means the only way someone can integrate with Vault Bets API it is simply a template based off of trading bots that have been built previously. Developing new innovative ways of integrating with Vault Bets API is encouraged.
 
 ## Prerequisites
 
 1. `dfx` version 0.19.0 or greater [https://internetcomputer.org/docs/current/developer-docs/getting-started/hello-world]
 2. `mops` CLI version 0.44.1 or greater and API 1.2 or greater installed [https://mops.one/]
-3. `node`
-4. `icblast`
+3. `node` we use version 18 or greater
+4. `icblast` - we use version ^2.0.46
 
 ## Setup
 
@@ -27,7 +27,7 @@ e.g. like the one below uses `"template-trading-bot"`
 GAME_CONTROLLER_HOST="https://game-controller-staging-f4122b96027d.herokuapp.com"
 TRADING_BOT_CANISTER_ID="3o2d5-mqaaa-aaaag-ak6gq-cai"
 HASH_IDENTITY="template-trading-bot"
-API_KEY="06d4f839-7b18-46bb-a91a-218f9e4d3475"
+API_KEY="06d4f839-7b18-46bb-a91a-218f9e4d0000"
 ```
 
 ### Run Node script to get principal
@@ -36,11 +36,11 @@ Run the following script to get the principal for your trading bot server. E.g.:
 
 `> node src/get-principal.mjs template-trading-bot`
 
-Output:  `esy6y-t7wce-iq3eo-y7dzt-snwj2-nwxmi-mini2-cragm-tq2cc-s4nsf-sae`
+Output: `esy6y-t7wce-iq3eo-y7dzt-snwj2-nwxmi-mini2-cragm-tq2cc-s4nsf-sae`
 
 ### Deploy the canister
 
-To deploy your canister everything should already be setup. Make any changes you want to the canister before deploying (not a requirement).
+To deploy your canister everything should already be setup. Make any changes you want to the canister before deploying (no changes are required).
 
 Run:
 
@@ -63,31 +63,78 @@ Vault bet also has a Open source trading bot which you can view for Ideas here: 
 
 ## Endpoints
 
-### Place Bet
+### placeBet
+
+This function allows users to place a bet on a given market on a given orderbook/events canister
 
 #### Params
 
-#### Returns 
+- eventCanisterId : Principal - The event/orderbook cansiter id
+- marketId : Event.MarketID - The id of the market you wish to place a bet on.
+- order : Event.PlaceOrder - Object containing the odds, number of contracts and side (buy or sell) for the bet.
 
-### Cancel Bet
+#### Returns
+
+Immutable order
+
+```bash
+ImmutableOrder {
+  'id' : OrderID,
+  'status' : OrderStatus,
+  'eventId' : EventID,
+  'premium' : Premium,
+  'initialContracts' : bigint,
+  'createdAt' : Time,
+  'side' : OrderSide,
+  'user' : Principal,
+  'currentContracts' : bigint,
+  'marketId' : MarketID,
+}
+```
+
+### cancelBet
+
+This function allows users to cancel a specific bet by orderId on a given event/orderbook canister.
 
 #### Params
 
-#### Returns 
+- eventCanisterId : Principal - The event/orderbook cansiter id
+- marketId : Event.MarketID - The id of the market you wish to place a bet on.
+- orderId : Text - The orderId of the bet you wish to cancel.
 
-### Fetch Order Book
+#### Returns
+
+- The refund amount of the order in E8S
+
+### getBotsOrders
+
+This function allows users to all of the trading bot canisters past bets
 
 #### Params
 
-#### Returns 
+- eventCanisterId : Principal - The event/orderbook cansiter id
+- marketId : Event.MarketID - The id of the market you wish to place a bet on.
 
-## Advised usage
+#### Returns
 
-## Alternative Methods
+- [Event.ImmutableOrder]
 
-### Setup a heatbeat function in the canister
+```bash
+ImmutableOrder {
+  'id' : OrderID,
+  'status' : OrderStatus,
+  'eventId' : EventID,
+  'premium' : Premium,
+  'initialContracts' : bigint,
+  'createdAt' : Time,
+  'side' : OrderSide,
+  'user' : Principal,
+  'currentContracts' : bigint,
+  'marketId' : MarketID,
+}
+```
 
-### Use icblast as your canister and allow it to make signed calls directly to the orderbooks
+# Useful command examples
 
 ```bash
 dfx deploy tradingBot --network development --yes --argument '(principal "fharu-aazmu-p36k6-lkjc4-lvtak-q2smq-umn7o-k7bow-g4rps-mlt27-rqe")'
@@ -132,8 +179,4 @@ dfx canister call or2ch-3iaaa-aaaag-qjulq-cai --network ic getTransferMap '(1:na
 
 ## How to top up the trading bot
 
-Literally just send ICP to the canister ID.
-
-```bash
-
-```
+Literally just send ICP to the canister ID from a wallet of your choice
