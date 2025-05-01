@@ -1,12 +1,32 @@
-type TransferResults = 
+type ValidateBetResult = 
  variant {
    Err: text;
-   Ok: vec TransferResult;
+   Ok: nat;
+ };
+type UpdateOrderReceipt = 
+ variant {
+   Err: text;
+   Ok: ImmutableOrder;
  };
 type TransferResult = 
  variant {
    Err: FailedTransfer;
    Ok: SuccessfulTransfer;
+ };
+type TransferFromError = 
+ variant {
+   BadBurn: record {min_burn_amount: nat;};
+   BadFee: record {expected_fee: nat;};
+   CreatedInFuture: record {ledger_time: nat64;};
+   Duplicate: record {duplicate_of: nat;};
+   GenericError: record {
+                   error_code: nat;
+                   message: text;
+                 };
+   InsufficientAllowance: record {allowance: nat;};
+   InsufficientFunds: record {balance: nat;};
+   TemporarilyUnavailable;
+   TooOld;
  };
 type TransferError = 
  variant {
@@ -26,8 +46,12 @@ type Time = int;
 type SuccessfulTransfer = 
  record {
    amount: nat;
-   marketId: MarketID;
    user: principal;
+ };
+type Result__1 = 
+ variant {
+   Err: text;
+   Ok: text;
  };
 type Result = 
  variant {
@@ -35,6 +59,11 @@ type Result =
    Ok: nat;
  };
 type Premium = nat;
+type PlaceOrderResult = 
+ variant {
+   Err: TransferFromError;
+   Ok: ImmutableOrder;
+ };
 type PlaceOrder = 
  record {
    contracts: nat;
@@ -60,6 +89,16 @@ type OrderResult =
  };
 type OrderID = text;
 type OrderBooksResponse = vec MarketOrderBookResponse;
+type OrderBookState = 
+ variant {
+   Cancelled;
+   Finishing;
+   LongPositionWon;
+   NonePositionWon;
+   Ongoing;
+   Paused;
+   ShortPositionWon;
+ };
 type OrderBookResponse = 
  record {
    buy: vec OrderBookPricePoint;
@@ -72,6 +111,7 @@ type OrderBookPricePoint =
  };
 type MatchedOrderSide = 
  record {
+   isFreeBet: bool;
    orderId: OrderID;
    "principal": principal;
  };
@@ -84,15 +124,21 @@ type MatchedOrder =
    matchedAt: Time;
    sell: MatchedOrderSide;
  };
-type MarketTransferResult = 
+type MarketTradedAmount = 
+ record {
+   amount: nat;
+   marketId: MarketID;
+ };
+type MarketProcessingResult = 
  record {
    marketId: MarketID;
-   transferResults: TransferResults;
+   processingResult: Result__1;
  };
 type MarketOrderBookResponse = 
  record {
    marketId: MarketID;
    orderBook: OrderBookResponse;
+   state: OrderBookState;
  };
 type MarketInfo = 
  record {
@@ -128,10 +174,14 @@ type ImmutableOrder =
    eventId: EventID;
    id: OrderID;
    initialContracts: nat;
+   isFreeBet: bool;
    marketId: MarketID;
    premium: Premium;
+   processedByUserbook: bool;
    side: OrderSide;
+   stake: nat;
    status: OrderStatus;
+   updatedAt: Time;
    user: principal;
  };
 type ImmutableBalances = 
@@ -148,6 +198,7 @@ type GraphDataPoint =
  };
 type GraphData = 
  record {
+   betType: BetType;
    data: vec GraphDataPoint;
    marketId: MarketID;
    marketName: text;
@@ -159,12 +210,14 @@ type FinalisedMatchedBet =
    contracts: nat;
    createdAt: Time;
    eventId: EventID;
+   isFreeBet: bool;
    marketId: MarketID;
    marketName: text;
    matchedAt: Time;
    nftHolder: bool;
    odds: nat;
    outcome: OrderResult;
+   processedByUserbook: bool;
    side: OrderSide;
    stake: nat;
    user: principal;
@@ -176,24 +229,36 @@ type FinalisedCreatedBet =
    createdAt: Time;
    eventId: EventID;
    initialContracts: nat;
+   isFreeBet: bool;
    marketId: MarketID;
    marketName: text;
    nftHolder: bool;
    odds: nat;
    orderId: OrderID;
    outcome: OrderResult;
+   processedByUserbook: bool;
    side: OrderSide;
    stake: nat;
    status: OrderStatus;
    unmatchedContracts: nat;
+   updatedAt: Time;
    user: principal;
  };
 type FailedTransfer = 
  record {
    error: TransferError;
    intendedAmount: nat;
-   marketId: MarketID;
    user: principal;
+ };
+type EventStatsData = 
+ record {
+   betTypeTradedAmounts: vec BetTypeTradedAmount;
+   graphData: vec GraphData;
+   lastUpdateErrorMessage: opt text;
+   lastUpdatedAt: Time;
+   marketTradedAmounts: vec MarketTradedAmount;
+   orderBooks: OrderBooksResponse;
+   totalTradedAmount: nat;
  };
 type EventID = nat;
 type EventEndData = 
@@ -203,55 +268,82 @@ type EventEndData =
    endTime: Time;
    eventId: EventID;
    marketAccounting: vec MarketBalance;
+   marketProcessingResults: vec MarketProcessingResult;
    matchedBets: vec FinalisedMatchedBet;
    totalCommissions: nat;
    totalMatched: nat;
    totalOpen: nat;
-   transferResults: vec MarketTransferResult;
+   transferResults: vec TransferResult;
  };
 type Event = 
  service {
-   cancelOrder: (MarketID, OrderID) -> (CancelOrderReceipt);
-   commitOrder: (nat) -> (blob);
+   cancelOrder: (OrderID) -> (CancelOrderReceipt);
    endEvent: (InitEventDetails) -> (EventEndData);
    getAdmins: () -> (vec principal);
-   getBetTypeTradedAmount: (BetType) -> (nat);
+   getAllCreatedOrders: () -> (vec ImmutableOrder) query;
+   getAllFullyUpdatedOrders: () -> (vec ImmutableOrder) query;
+   getAllMatchedOrders: () -> (vec MatchedOrder);
+   getBetTypeTradedAmount: (BetType) -> (nat) query;
    getCaller: () -> (principal);
    getCommission: () -> (nat) query;
+   getDetailsForOrderPlacedEvent: (text) ->
+    (opt DetailsForOrderPlacedEvent) query;
    getEventDetails: () -> (InitEventDetails) query;
-   getGraphData: () -> (vec GraphData);
+   getEventStatsData: (opt nat64) -> (opt EventStatsData) query;
+   getFullyUpdatedOrders: (nat, nat) -> (vec FinalisedCreatedBet);
+   getGraphData: () -> (vec GraphData) query;
+   getMarketMakerPrincipals: () -> (vec principal);
    getMarketNames: () -> (vec text) query;
-   getMarketTradedAmount: (MarketID) -> (nat);
-   getMatchedOrder: (text) -> (opt MatchedOrder);
-   getOrder: (text) -> (opt ImmutableOrder);
-   getOrderBook: (MarketID) -> (opt OrderBookResponse);
-   getOrderBooks: () -> (OrderBooksResponse);
-   getTotalTradedAmount: () -> (nat);
+   getMarketTradedAmount: (MarketID) -> (nat) query;
+   getMatchedOrder: (text) -> (opt MatchedOrder) query;
+   getOrder: (text) -> (opt ImmutableOrder) query;
+   getOrderBook: (MarketID) -> (opt OrderBookResponse) query;
+   getOrderBooks: () -> (OrderBooksResponse) query;
+   getOrderBooksStates: () -> (vec OrderBookState) query;
+   getOrdersForUser: (principal) -> (vec ImmutableOrder);
+   getTotalTradedAmount: () -> (nat) query;
    getTransactionFee: () -> (nat) query;
-   getUserOrders: () -> (vec ImmutableOrder);
-   getUserOrdersByMarket: (MarketID) -> (vec ImmutableOrder);
+   getUserOrders: () -> (vec ImmutableOrder) query;
+   getUserOrdersByMarket: (MarketID) -> (vec ImmutableOrder) query;
    init: (InitArgs) -> (InitEventDetails);
+   isMarketMakerPrincipal: (principal) -> (bool);
    panicEvent: () -> (EventEndData);
    panicMarket: (nat) -> (vec TransferResult);
-   placeOrder: (MarketID, PlaceOrder, nat) -> (opt ImmutableOrder);
+   placeFreeBetOrder: (MarketID, PlaceOrder, principal) -> (PlaceOrderResult);
+   placeOrder: (MarketID, PlaceOrder) -> (PlaceOrderResult);
+   removeAdmin: (principal) -> ();
+   removeDetailsForOrderPlacedEvent: (text) -> ();
    setAdmin: (principal) -> ();
+   updateOrder: (OrderID, nat) -> (UpdateOrderReceipt);
+   updateOrderBookState: (MarketID, OrderBookState) -> (bool);
+   updateState: (OrderBookState) -> ();
+   validateFreeBetOrder: (MarketID, PlaceOrder, principal) ->
+    (ValidateBetResult) query;
+   validateOrder: (MarketID, PlaceOrder) -> (ValidateBetResult) query;
    withdrawCommissions: () -> (Result);
  };
 type EnvVariant = 
  variant {
    Development: text;
    IC: text;
+   Local: text;
    Staging: text;
+ };
+type DetailsForOrderPlacedEvent = 
+ record {
+   order: ImmutableOrder;
+   topBuyOrder: opt OrderBookPricePoint;
+   topSellOrder: opt OrderBookPricePoint;
  };
 type CancelOrderReceipt = 
  variant {
    Err: text;
    Ok: nat;
  };
-type BetType = 
- variant {
-   fr;
-   ftr;
-   outright;
+type BetTypeTradedAmount = 
+ record {
+   amount: nat;
+   betType: BetType;
  };
+type BetType = text;
 service : (EnvVariant) -> Event

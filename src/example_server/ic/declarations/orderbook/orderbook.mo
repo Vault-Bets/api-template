@@ -2,34 +2,73 @@
 // Please use `import service "ic:canister_id"` instead to call canisters on the IC if possible.
 
 module {
-  public type BetType = { #fr; #ftr; #outright };
+  public type BetType = Text;
+  public type BetTypeTradedAmount = { betType : BetType; amount : Nat };
   public type CancelOrderReceipt = { #Ok : Nat; #Err : Text };
-  public type EnvVariant = { #IC : Text; #Development : Text; #Staging : Text };
+  public type DetailsForOrderPlacedEvent = {
+    order : ImmutableOrder;
+    topSellOrder : ?OrderBookPricePoint;
+    topBuyOrder : ?OrderBookPricePoint;
+  };
+  public type EnvVariant = {
+    #IC : Text;
+    #Local : Text;
+    #Development : Text;
+    #Staging : Text;
+  };
   public type Event = actor {
-    cancelOrder : shared (MarketID, OrderID) -> async CancelOrderReceipt;
-    commitOrder : shared Nat -> async Blob;
+    cancelOrder : shared OrderID -> async CancelOrderReceipt;
     endEvent : shared InitEventDetails -> async EventEndData;
     getAdmins : shared () -> async [Principal];
-    getBetTypeTradedAmount : shared BetType -> async Nat;
+    getAllCreatedOrders : shared query () -> async [ImmutableOrder];
+    getAllFullyUpdatedOrders : shared query () -> async [ImmutableOrder];
+    getAllMatchedOrders : shared () -> async [MatchedOrder];
+    getBetTypeTradedAmount : shared query BetType -> async Nat;
     getCaller : shared () -> async Principal;
     getCommission : shared query () -> async Nat;
+    getDetailsForOrderPlacedEvent : shared query Text -> async ?DetailsForOrderPlacedEvent;
     getEventDetails : shared query () -> async InitEventDetails;
-    getGraphData : shared () -> async [GraphData];
+    getEventStatsData : shared query ?Nat64 -> async ?EventStatsData;
+    getFullyUpdatedOrders : shared (Nat, Nat) -> async [FinalisedCreatedBet];
+    getGraphData : shared query () -> async [GraphData];
+    getMarketMakerPrincipals : shared () -> async [Principal];
     getMarketNames : shared query () -> async [Text];
-    getMarketTradedAmount : shared MarketID -> async Nat;
-    getMatchedOrder : shared Text -> async ?MatchedOrder;
-    getOrder : shared Text -> async ?ImmutableOrder;
-    getOrderBook : shared MarketID -> async ?OrderBookResponse;
-    getOrderBooks : shared () -> async OrderBooksResponse;
-    getTotalTradedAmount : shared () -> async Nat;
+    getMarketTradedAmount : shared query MarketID -> async Nat;
+    getMatchedOrder : shared query Text -> async ?MatchedOrder;
+    getOrder : shared query Text -> async ?ImmutableOrder;
+    getOrderBook : shared query MarketID -> async ?OrderBookResponse;
+    getOrderBooks : shared query () -> async OrderBooksResponse;
+    getOrderBooksStates : shared query () -> async [OrderBookState];
+    getOrdersForUser : shared Principal -> async [ImmutableOrder];
+    getTotalTradedAmount : shared query () -> async Nat;
     getTransactionFee : shared query () -> async Nat;
-    getUserOrders : shared () -> async [ImmutableOrder];
-    getUserOrdersByMarket : shared MarketID -> async [ImmutableOrder];
+    getUserOrders : shared query () -> async [ImmutableOrder];
+    getUserOrdersByMarket : shared query MarketID -> async [ImmutableOrder];
     init : shared InitArgs -> async InitEventDetails;
+    isMarketMakerPrincipal : shared Principal -> async Bool;
     panicEvent : shared () -> async EventEndData;
     panicMarket : shared Nat -> async [TransferResult];
-    placeOrder : shared (MarketID, PlaceOrder, Nat) -> async ?ImmutableOrder;
+    placeFreeBetOrder : shared (
+        MarketID,
+        PlaceOrder,
+        Principal,
+      ) -> async PlaceOrderResult;
+    placeOrder : shared (MarketID, PlaceOrder) -> async PlaceOrderResult;
+    removeAdmin : shared Principal -> async ();
+    removeDetailsForOrderPlacedEvent : shared Text -> async ();
     setAdmin : shared Principal -> async ();
+    updateOrder : shared (OrderID, Nat) -> async UpdateOrderReceipt;
+    updateOrderBookState : shared (MarketID, OrderBookState) -> async Bool;
+    updateState : shared OrderBookState -> async ();
+    validateFreeBetOrder : shared query (
+        MarketID,
+        PlaceOrder,
+        Principal,
+      ) -> async ValidateBetResult;
+    validateOrder : shared query (
+        MarketID,
+        PlaceOrder,
+      ) -> async ValidateBetResult;
     withdrawCommissions : shared () -> async Result;
   };
   public type EventEndData = {
@@ -37,19 +76,28 @@ module {
     totalCommissions : Nat;
     endTime : Time;
     totalMatched : Nat;
-    transferResults : [MarketTransferResult];
+    transferResults : [TransferResult];
     createdBets : [FinalisedCreatedBet];
     totalOpen : Nat;
     marketAccounting : [MarketBalance];
     matchedBets : [FinalisedMatchedBet];
+    marketProcessingResults : [MarketProcessingResult];
     canisterId : Principal;
   };
   public type EventID = Nat;
+  public type EventStatsData = {
+    lastUpdateErrorMessage : ?Text;
+    totalTradedAmount : Nat;
+    lastUpdatedAt : Time;
+    betTypeTradedAmounts : [BetTypeTradedAmount];
+    marketTradedAmounts : [MarketTradedAmount];
+    orderBooks : OrderBooksResponse;
+    graphData : [GraphData];
+  };
   public type FailedTransfer = {
     user : Principal;
     intendedAmount : Nat;
     error : TransferError;
-    marketId : MarketID;
   };
   public type FinalisedCreatedBet = {
     status : OrderStatus;
@@ -57,14 +105,17 @@ module {
     marketName : Text;
     initialContracts : Nat;
     nftHolder : Bool;
+    processedByUserbook : Bool;
     odds : Nat;
     createdAt : Time;
     side : OrderSide;
     user : Principal;
     commission : Nat;
     orderId : OrderID;
+    updatedAt : Time;
     stake : Nat;
     marketId : MarketID;
+    isFreeBet : Bool;
     outcome : OrderResult;
     unmatchedContracts : Nat;
     canisterId : Principal;
@@ -74,6 +125,7 @@ module {
     marketName : Text;
     matchedAt : Time;
     nftHolder : Bool;
+    processedByUserbook : Bool;
     odds : Nat;
     createdAt : Time;
     side : OrderSide;
@@ -82,12 +134,14 @@ module {
     contracts : Nat;
     stake : Nat;
     marketId : MarketID;
+    isFreeBet : Bool;
     outcome : OrderResult;
     canisterId : Principal;
   };
   public type GraphData = {
     marketName : Text;
     data : [GraphDataPoint];
+    betType : BetType;
     marketId : MarketID;
   };
   public type GraphDataPoint = { odds : Nat; time : Time; contracts : Nat };
@@ -102,11 +156,15 @@ module {
     eventId : EventID;
     premium : Premium;
     initialContracts : Nat;
+    processedByUserbook : Bool;
     createdAt : Time;
     side : OrderSide;
     user : Principal;
     currentContracts : Nat;
+    updatedAt : Time;
+    stake : Nat;
     marketId : MarketID;
+    isFreeBet : Bool;
   };
   public type InitArgs = {
     initControllers : [Principal];
@@ -133,12 +191,14 @@ module {
   };
   public type MarketOrderBookResponse = {
     orderBook : OrderBookResponse;
+    state : OrderBookState;
     marketId : MarketID;
   };
-  public type MarketTransferResult = {
-    transferResults : TransferResults;
+  public type MarketProcessingResult = {
+    processingResult : Result__1;
     marketId : MarketID;
   };
+  public type MarketTradedAmount = { marketId : MarketID; amount : Nat };
   public type MatchedOrder = {
     id : OrderID;
     buy : MatchedOrderSide;
@@ -147,11 +207,24 @@ module {
     sell : MatchedOrderSide;
     contracts : Nat;
   };
-  public type MatchedOrderSide = { principal : Principal; orderId : OrderID };
+  public type MatchedOrderSide = {
+    principal : Principal;
+    orderId : OrderID;
+    isFreeBet : Bool;
+  };
   public type OrderBookPricePoint = { odds : Nat; contracts : Nat };
   public type OrderBookResponse = {
     buy : [OrderBookPricePoint];
     sell : [OrderBookPricePoint];
+  };
+  public type OrderBookState = {
+    #Paused;
+    #ShortPositionWon;
+    #Ongoing;
+    #Finishing;
+    #NonePositionWon;
+    #Cancelled;
+    #LongPositionWon;
   };
   public type OrderBooksResponse = [MarketOrderBookResponse];
   public type OrderID = Text;
@@ -159,13 +232,14 @@ module {
   public type OrderSide = { #buy; #sell };
   public type OrderStatus = { #cancelled; #open; #filled };
   public type PlaceOrder = { odds : Nat; side : OrderSide; contracts : Nat };
+  public type PlaceOrderResult = {
+    #Ok : ImmutableOrder;
+    #Err : TransferFromError;
+  };
   public type Premium = Nat;
   public type Result = { #Ok : Nat; #Err : TransferError };
-  public type SuccessfulTransfer = {
-    user : Principal;
-    marketId : MarketID;
-    amount : Nat;
-  };
+  public type Result__1 = { #Ok : Text; #Err : Text };
+  public type SuccessfulTransfer = { user : Principal; amount : Nat };
   public type Time = Int;
   public type TransferError = {
     #GenericError : { message : Text; error_code : Nat };
@@ -177,10 +251,22 @@ module {
     #TooOld;
     #InsufficientFunds : { balance : Nat };
   };
+  public type TransferFromError = {
+    #GenericError : { message : Text; error_code : Nat };
+    #TemporarilyUnavailable;
+    #InsufficientAllowance : { allowance : Nat };
+    #BadBurn : { min_burn_amount : Nat };
+    #Duplicate : { duplicate_of : Nat };
+    #BadFee : { expected_fee : Nat };
+    #CreatedInFuture : { ledger_time : Nat64 };
+    #TooOld;
+    #InsufficientFunds : { balance : Nat };
+  };
   public type TransferResult = {
     #Ok : SuccessfulTransfer;
     #Err : FailedTransfer;
   };
-  public type TransferResults = { #Ok : [TransferResult]; #Err : Text };
+  public type UpdateOrderReceipt = { #Ok : ImmutableOrder; #Err : Text };
+  public type ValidateBetResult = { #Ok : Nat; #Err : Text };
   public type Self = EnvVariant -> async Event
 }

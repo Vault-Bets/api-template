@@ -1,27 +1,31 @@
 import "dotenv/config";
-import { OrderBookResponse } from "./ic/declarations/orderbook/orderbook.did";
-import * as tradingBot from "./ic/api/tradingBot";
+import { ImmutableOrder, OrderBookResponse, PlaceOrder } from "./ic/declarations/orderbook/orderbook.did";
 import * as event from "./ic/api/event";
 import { decimals } from "./utils/icHelper";
-import {
-  ImmutableOrder,
-  PlaceOrder,
-} from "./ic/declarations/tradingBot/tradingBot.did";
-import { getEnvVar } from "./utils/utils";
 import axios from "axios";
 import { EventCanister } from "./models/events";
 
-const GAME_CONTROLLER_HOST = getEnvVar("GAME_CONTROLLER_HOST");
+const GAME_CONTROLLER_HOST = process.env.GAME_CONTROLLER_HOST;
 
-export const getTradingBotOrders = async (
+export const getMyOrders = async (
   marketId: number,
   canisterID: string
 ) => {
-  const tradingBotOrders = await tradingBot.getBotsOrders(
+  const orders = await event.getBotsOrders(
+    canisterID,
+  );
+  return orders;
+};
+
+export const getMyOrdersForSpecificMarket = async (
+  marketId: number,
+  canisterID: string
+) => {
+  const orders = await event.getBotsOrdersByMarket(
     canisterID,
     BigInt(marketId)
   );
-  return tradingBotOrders;
+  return orders;
 };
 
 export const placeBet = async (
@@ -36,12 +40,37 @@ export const placeBet = async (
     side: buyOrSell,
     contracts: BigInt(contracts),
   };
-  const placedOrder: ImmutableOrder = await tradingBot.placeBet(
+  const placedOrder: ImmutableOrder = await event.placeBet(
     canisterID,
     BigInt(marketId),
     placeOrder
   );
   return placedOrder;
+};
+
+export const cancelBet = async (
+  orderId: string,
+  canisterID: string
+) => {
+  const refundAmount = await event.cancelBet(canisterID, orderId);
+  return refundAmount;
+};
+
+export const updateBet = async (
+  orderId: string,
+  canisterID: string,
+  odds: number
+) => {
+  const updatedOrder = await event.updateOrder(canisterID, orderId, odds);
+  return updatedOrder;
+};
+
+export const getOrder = async (
+  orderId: string,
+  canisterID: string
+) => {
+  const order = await event.getOrder(canisterID, orderId);
+  return order;
 };
 
 export const fetchOrderBook = async (
