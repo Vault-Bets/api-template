@@ -13,6 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "@dfinity/agent": "^1.2.0",
+    "@dfinity/principal": "^2.4.1",
     "@infu/icblast": "^2.0.46",
     "dotenv": "^16.3.2",
     "tsx": "4.7.1"
